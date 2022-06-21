@@ -44,12 +44,12 @@ async def owes_me(ctx,
         amount = round(float(amount_str), 2)
         user_to_receive = ctx.author
         if user == None:
-            embed = create_error_embed(f"No user specified. \nUsage: `${ctx.command.name} {ctx.command.signature}` or try `$help {ctx.command.name}`")
+            embed = create_error_embed(f"No user specified. \nUsage: `${ctx.command.name} {ctx.command.signature}`  or try  `$help {ctx.command.name}`")
             await ctx.channel.send(embed=embed)
             return
 
         print_message = ""
-        for user_to_pay in user:
+        for user_to_pay in set(user):
             
             # Dont let bots have tabs
             if user_to_pay.bot:
@@ -99,7 +99,7 @@ async def owes(ctx,
             return
 
         print_message = ""
-        for user_to_pay in user:
+        for user_to_pay in set(user):
 
             # Dont let bots have tabs
             if user_to_pay.bot:
@@ -165,63 +165,68 @@ async def paid(ctx,
 
     except Exception:
         traceback.print_exc()
-        await ctx.channel.send("Something went wrong.  :(")
+        embed = create_error_embed("Something went wrong.  :(")
+        await ctx.channel.send(embed = embed)
 
 #~~~~~~~~~~~~ $divide ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 @bot.command(
     name="divide",
     brief="Divides a bill evenly among listed users",
-    help='''Command Usage:\n$divide @recipient(optional) amount @user1 @user2 ...\n\nFor an equally divded bill, this divides the total amount between the listed users, with the amount owing to `recipient`. If unspecified, the `recipient` is the one who called the command.\n\nThis assumes that the recipient's portion of the bill was not removed from the total amount.\n\nEg. "$divide 30 @friend1 @friend2" would result in both friend1 and friend2 owing you $10.''')
-async def divide(ctx, *args):
-    try:
-        if str(ctx.author.id) != os.environ['KATE_ID']:
-            await ctx.channel.send("Kate is testing things. This is unavailable rn.")
+    help='''For an equally divded bill, this divides the total amount between the listed users, with the amount owing to `recipient`.\n\nThis assumes that the recipient's portion of the bill was not removed from the total amount.\n\nEg. "$divide @friend1 30 @friend2 @friend3" would result in both friend2 and friend3 owing $10 to friend1.''')
+async def divide(ctx, 
+                 recipient: discord.Member,
+                 amount, 
+                 users: commands.Greedy[discord.Member]):
+    try:  
+        # Parse Parameters            
+        if recipient.bot:
+            embed = create_error_embed("Failed to add tab. Cannot owe a bot.")
+            await ctx.channel.send(embed = embed)
             return
-            
-        # Parse Parameters
-        if args[0].startswith(
-                "<@"):  # If a user_to_receive is specified
-            i = 2
-            user_to_receive = ctx.guild.get_member(args[0])
-        else:
-            i = 1
-            user_to_receive = ctx.author
-
-        amount_str = re.search('[\d]+([.][\d]{1,2})?', args[i-1])[0]
-        users = []
+        
+        user_to_receive = recipient   
+        amount_str = re.search('[\d]+([.][\d]{1,2})?', amount)[0]
+        
         print_string = ""
-        while i < len(args):  # Iterate over all users specified
-            user_to_pay = ctx.guild.get_member(args[i])
+        # Iterate over all users specified and ensure each one is valid
+        for user_to_pay in set(users):  
 
             # Dont let self-tabs or bot-tabs exist
-            if user_to_pay == ctx.author:
-                await ctx.channel.send(
-                    f"Failed to add tab. Cannot owe yourself.")
+            if user_to_pay == user_to_receive:
+                embed = create_error_embed(f"Failed to add tab. Cannot owe yourself.\nUse `$help {ctx.command.name}` for more information.")
+                await ctx.channel.send(embed = embed)
                 return
-            elif user_to_pay == None:
-                await ctx.channel.send(
-                    f"Failed to add tab. Argument #{i} is invalid.")
+            elif user_to_pay.bot:
+                embed = create_error_embed("Failed to add tab. Cannot be owed by a bot.")
+                await ctx.channel.send(embed = embed)
                 return
-
-            # Add this user to the printout
-            users.append(user_to_pay)
-            print_string += user_to_pay.display_name + ", "
-            i += 1
 
         # Calculate amount for each user to pay
-        amount = round(float(amount_str) / (len(users) + 1), 2)
-
-        # Print Parsed Instructions
-        print_string = print_string[:-2] + " owe ${0:.2f} to {1}".format(amount, user_to_receive.display_name)
-        await ctx.channel.send(print_string)
+        amount = round(float(amount_str) / (len(set(users)) + 1), 2)
 
         # Add tabs to database
-        for user_to_pay in users:
-            tm.add_tab(user_to_receive.id, user_to_pay.id, amount)
-
+        for user_to_pay in set(users):
+            success = tm.add_tab(user_to_receive.id, user_to_pay.id, amount)
+            if not success:
+                embed = create_error_embed(f"Failed to add tab for {user_to_pay.display_name}.")
+                await ctx.channel.send(embed = embed)
+            else:
+                print_string += user_to_pay.display_name + ", "
+        
+        # Print Parsed Instructions
+        if print_string != "":
+            print_string = print_string[:-2] + " each owe ${0:.2f} to {1}".format(
+                amount, user_to_receive.display_name)
+            embed = create_message_embed("Success!", print_string)
+            await ctx.channel.send(embed = embed)
+        else:
+            embed = create_error_embed(f"No users specified. \nUsage: `${ctx.command.name} {ctx.command.signature}`  or try  `$help {ctx.command.name}`")
+            await ctx.channel.send(embed = embed)
+        
     except Exception:
         traceback.print_exc()
-        await ctx.channel.send("Something went wrong.  :(")
+        embed = create_error_embed("Something went wrong.  :(")
+        await ctx.channel.send(embed = embed)
 
 #~~~~~~~~~~~~ $inquire ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 @bot.command(
@@ -269,7 +274,8 @@ async def inquire(ctx, user: discord.Member = None):
 
     except Exception:
         traceback.print_exc()
-        await ctx.channel.send("Something went wrong.  :(")
+        embed = create_error_embed("Something went wrong.  :(")
+        await ctx.channel.send(embed = embed)
 
 #~~~~~~~~~~~~ $who_owes_me ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 @bot.command(
@@ -310,7 +316,8 @@ async def who_owes_me(ctx):
 
     except Exception:
         traceback.print_exc()
-        await ctx.channel.send("Something went wrong.  :(")
+        embed = create_error_embed("Something went wrong.  :(")
+        await ctx.channel.send(embed = embed)
     return
 
 #~~~~~~~~~~~~ $clear_db ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -327,19 +334,19 @@ async def clear_db(ctx):
 async def on_command_error(ctx, error):
     
     if isinstance(error, commands.TooManyArguments):
-        embed = create_error_embed(f"Too many arguments were passed to the command. \nUsage: `${ctx.command.name} {ctx.command.signature}` or try `$help {ctx.command.name}`")
+        embed = create_error_embed(f"Too many arguments were passed to the command. \nUsage: `${ctx.command.name} {ctx.command.signature}`  or try  `$help {ctx.command.name}`")
         
     elif isinstance(error, commands.MissingRequiredArgument):
-        embed = create_error_embed(f"Missing parameters. \nUsage: `${ctx.command.name} {ctx.command.signature}` or try `$help {ctx.command.name}`")
+        embed = create_error_embed(f"Missing parameters. \nUsage: `${ctx.command.name} {ctx.command.signature}`  or try  `$help {ctx.command.name}`")
 
     elif isinstance(error, cmd_errors):
-        embed = create_error_embed(f"Failed to parse command. \nUsage: `${ctx.command.name} {ctx.command.signature}` or try `$help {ctx.command.name}`")
+        embed = create_error_embed(f"Failed to parse command. \nUsage: `${ctx.command.name} {ctx.command.signature}`  or try  `$help {ctx.command.name}`")
         
     else:
         raise error
         return
         
-    await ctx.send(embed=embed)
+    await ctx.channel.send(embed=embed)
     return
       
 # Turn on the bot!
