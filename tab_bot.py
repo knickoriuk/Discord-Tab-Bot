@@ -37,14 +37,15 @@ async def on_ready():
     help="Records that the specified user owes you an amount. You can list as many users as you would like; they will all owe you that amount. Make sure you tag the user so the command works properly.")
 async def owes_me(ctx, 
                   amount, 
-                  user: commands.Greedy[discord.Member] = None):
+                  user: commands.Greedy[discord.Member]):
     try:
         # Parse Parameters
         amount_str = re.search('[\d]+([.][\d]{1,2})?', amount)[0]
         amount = round(float(amount_str), 2)
         user_to_receive = ctx.author
-        if user == None:
-            embed = create_error_embed(f"No user specified. \nUsage: `${ctx.command.name} {ctx.command.signature}`  or try  `$help {ctx.command.name}`")
+        
+        if user == []: # If no users listed (or no amount and 1 user listed)
+            embed = create_error_embed(f"Missing parameters. \nUsage: `${ctx.command.name} {ctx.command.signature}`  or try  `$help {ctx.command.name}`")
             await ctx.channel.send(embed=embed)
             return
 
@@ -98,6 +99,11 @@ async def owes(ctx,
             await ctx.channel.send(embed=embed)
             return
 
+        if user == []: # If no users listed (or amount was omitted)
+            embed = create_error_embed(f"Missing parameters. \nUsage: `${ctx.command.name} {ctx.command.signature}`  or try  `$help {ctx.command.name}`")
+            await ctx.channel.send(embed=embed)
+            return
+
         print_message = ""
         for user_to_pay in set(user):
 
@@ -122,7 +128,8 @@ async def owes(ctx,
         if print_message != "":
             embed = create_message_embed("Success!", print_message)
             await ctx.channel.send(embed = embed)
-
+            return
+                   
     except Exception:
         traceback.print_exc()
         embed = create_error_embed("Something went wrong.  :(")
@@ -159,8 +166,7 @@ async def paid(ctx,
             await ctx.send(embed = embed)
             return
         else:
-            embed = create_message_embed("Success!", "{0} paid ${1:.2f} to {2}.".format(
-                user_paying.display_name, amount, user_paid.display_name))
+            embed = create_message_embed("Success!", "{0} paid ${1:.2f} to {2}.".format(user_paying.display_name, amount, user_paid.display_name))
             await ctx.channel.send(embed = embed)
 
     except Exception:
@@ -248,7 +254,7 @@ async def inquire(ctx, user: discord.Member = None):
             return
             
         # Run Query
-        results = tm.query(subject.id)
+        results = tm.query(subject.id, mode="inquire")
                            
         # Get Current Guild (Server)
         guild = ctx.guild
@@ -287,17 +293,16 @@ async def who_owes_me(ctx):
     try:        
         # Get User
         subject = ctx.author
-        subj_id = str(subject.id)
 
         # Run Query
-        tabs = tm.find_who_owes_me(subj_id)
+        results = tm.query(subject.id, mode="who_owes_me")
 
         # Get Current Guild (Server)
         guild = ctx.guild
 
         # Print Results
         print_string = ""
-        for user_info in tabs:
+        for user_info in results:
             
             if guild == None: # We're in DMs, show ALL tabs
                 user = bot.get_user(user_info[0])
@@ -324,8 +329,38 @@ async def who_owes_me(ctx):
 @bot.command(hidden=True)
 async def clear_db(ctx):
     if str(ctx.author.id) == os.environ['KATE_ID']:
-        tm.clear_database()
+        tm._clear_database()
         await ctx.channel.send("The database was reset.")
+    else:
+        await ctx.channel.send("I don't take orders from you.")
+
+#~~~~~~~~~~~~ $get_db ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+@bot.command(hidden=True)
+async def get_db(ctx):
+    ''' Sends a list of all amounts owed by all users. For testing purposes only.
+    Also prints the current database structure to the console. '''
+    if str(ctx.author.id) == os.environ['KATE_ID']:
+        embed_string = "" # Holds a readable form of the database's contents
+        print_string = "\nCurrent Database {\n" # Holds the database's structure
+        db = tm._get_entire_database()
+        
+        for user1 in db.keys():
+            username1 = bot.get_user(int(user1)).name
+            print_string += username1 + ": {"
+            
+            for user2 in db[user1].keys():
+                username2 = bot.get_user(int(user2)).name
+                print_string += username2 + ": " + str(db[user1][user2]) +", "
+                
+                if db[user1][user2] > 0:
+                    embed_string += f"{username1} owes {username2} ${db[user1][user2]}.\n"
+                    
+            print_string += "},\n"
+        print_string += "}\n"
+        
+        embed = create_message_embed("The database contains:", embed_string)
+        await ctx.channel.send(embed = embed)
+        print(print_string)
     else:
         await ctx.channel.send("I don't take orders from you.")
 
